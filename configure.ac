@@ -156,6 +156,16 @@ AC_C_INLINE
 # Checks for library functions.
 AC_FUNC_MALLOC
 
+# libcurl — required by AiDiag for HTTP transport to the LLM API
+PKG_CHECK_MODULES([CURL], [libcurl],
+  [],
+  [AC_CHECK_LIB([curl], [curl_easy_init],
+    [CURL_LIBS="-lcurl"
+     CURL_CFLAGS=""],
+    [AC_MSG_ERROR([libcurl development files not found. Install libcurl-dev / curl-devel.])])])
+AC_SUBST([CURL_CFLAGS])
+AC_SUBST([CURL_LIBS])
+
 AC_CONFIG_FILES(
 	source/Psmcli/Makefile
 	source/LTime/Makefile
@@ -170,6 +180,7 @@ AC_CONFIG_FILES(
 	source/dhcp_client_utils/Makefile
 	source/msgq_util/Makefile
   source/FwBankInfo/Makefile
+  source/AiDiag/Makefile
 	Makefile
 )
 
