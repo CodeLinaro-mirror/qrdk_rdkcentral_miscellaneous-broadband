@@ -79,11 +79,11 @@ if [ "xcompleted" != "x`syscfg get psm_migration`" ];then
 			psmcli set dmsb.l2net.2.Members.Eth ""
 		fi 
 
-                if [ "$MODEL_NUM" == "CGM601TCOM" ] ||  [ "$MODEL_NUM" == "SG417DBCT" ];then
-                    if [ ! -f "/nvram/.xb10_enable_ethwan_mode" ];then
-                        psmcli set dmsb.wanmanager.if.2.Selection.Enable "FALSE"
-                    fi
-                fi
+		if [ "$MODEL_NUM" = "CGM601TCOM" ] || [ "$MODEL_NUM" = "SG417DBCT" ]; then
+			if [ ! -f "/nvram/.xb10_enable_ethwan_mode" ]; then
+				psmcli set dmsb.wanmanager.if.2.Selection.Enable "FALSE"
+			fi
+		fi
 
 		psmcli set dmsb.l2net.1.Port.9.LinkName ""
 		psmcli set dmsb.l2net.1.Port.9.Name ""
