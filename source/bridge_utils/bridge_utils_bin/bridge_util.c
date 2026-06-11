@@ -1753,13 +1753,15 @@ int updateBridgeInfo(bridgeDetails *bridgeInfo, char* ifNameToBeUpdated, int Opr
             		Either BCM driver/Onewifi will attach the vaps once it is created. 
 			*/
 			
-				/* Skip adding interface if it does not exist during IF_UP_CMD */
-			if ( IF_UP_CMD_TYPE == OprType && INTERFACE_NOT_EXIST == checkIfExists(token))
+			/* Skip adding interface if it does not exist during IF_UP_CMD */
+			if (IF_UP_CMD_TYPE == OprType && INTERFACE_NOT_EXIST == checkIfExists(token))
 			{
-				bridge_util_log("%s : Interface %s does not exist, skipping add to bridge\n", __FUNCTION__, token);
-				interfaceExist=false;
-				if(bridgeCreated)
+				interfaceExist = false;
+				if (bridgeCreated)
+				{
+					bridge_util_log("%s : Interface %s does not exist, skipping add to bridge\n", __FUNCTION__, token);
 					continue;
+				}
 			}
             	        if ( (ethWanEnabled) && ((if_type == ETH_IF_TYPE_VALUE) || (if_type == VLAN_IF_TYPE_VALUE) ) && ( strncmp(ethWanIfaceName,token,sizeof(ethWanIfaceName)-1) == 0 ))
             		    continue;
