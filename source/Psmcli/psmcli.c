@@ -124,6 +124,7 @@ static char const *help_usage_desc[] =
     "psmcli [subsys <prefix> | nosubsys] del <obj1 name> <obj2 name> …",
     "psmcli [subsys <prefix> | nosubsys] getinstcnt <obj1 name> <obj2 name> <obj3 name> …",
     "psmcli [subsys <prefix> | nosubsys] getallinst <obj name>",
+    "psmcli [subsys <prefix> | nosubsys] dumpall",
     "NOTE: default sub-system prefix is \"eRT.\", if neither subsys nor nosubsys is used.",
     NULL
 };
@@ -143,6 +144,7 @@ static void ccsp_exception_handler(int sig, siginfo_t *info, void *context);
 static void enable_ccsp_exception_handlers();
 #endif
 static unsigned int get_type_info(unsigned int *ccspType, char **typeString, int const typeFormat);
+static unsigned int typeString_from_ccspType(unsigned int ccspType, char *typeString);
 static psmcli_debug_level psmcli_get_debug_level(char const *file_name);
 // static inline void process_show();
 // static int psmcli_bus_name_in_use(char const *component_id, char  const *config_file); 
@@ -156,6 +158,7 @@ unsigned int process_setdetail(int const argCnt, char const * const argVars[], c
 unsigned int process_del(int const argCnt, char const * const argVars[], char const * const busHandle);
 unsigned int process_getallinst(int const argCnt, char const * const argVars[], char const * const busHandle);
 unsigned int process_getinstcnt(int const argCnt, char const * const argVars[], char const * const busHandle);
+unsigned int process_dumpall(int const argCnt, char const * const argVars[], char const * const busHandle);
 
 /* GLOBAL VAR */
 static char const * const psmcli_component_id       = "ccsp.psmclient";
@@ -174,7 +177,8 @@ static const cmdsTable_s cmdsTable[] = {
     { "setdetail", process_setdetail },
     { "del", process_del },
     { "getallinst", process_getallinst },
-    { "getinstcnt", process_getinstcnt }
+    { "getinstcnt", process_getinstcnt },
+    { "dumpall", process_dumpall }
 };
     
 /* IMPLMENTATION */
@@ -1387,6 +1391,72 @@ unsigned int process_getinstcnt(int const argCnt, char const * const argVars[], 
     if(instanceList != NULL) ((CCSP_MESSAGE_BUS_INFO*)busHandle)->freefunc(instanceList); 
 
     //    CcspTraceDebug(("<%s>[%s]: function finished returing %d\n", prog_name, func_name, func_ret));
+
+    return func_ret;
+}
+
+// Function: process_dumpall
+// Enumerate every PSM parameter and print: <type> <name> <value>
+// Example: psmcli dumpall
+//          psmcli nosubsys dumpall
+unsigned int process_dumpall(int const argCnt, char const * const argVars[], char const * const busHandle) {
+
+    (void)argCnt;
+    (void)argVars;
+
+    unsigned int        func_ret    = CCSP_SUCCESS;
+    unsigned int        numRec      = 0;
+    PCCSP_BASE_RECORD   pRecArray   = NULL;
+    unsigned int        i           = 0;
+    char const func_name[]          = "process_dumpall";
+
+    func_ret = PsmEnumRecords((void*)busHandle,
+                              subsys_prefix,
+                              "",        /* root - enumerate everything */
+                              0,         /* nextLevel=false -> recurse  */
+                              &numRec,
+                              &pRecArray);
+
+    if (func_ret != CCSP_SUCCESS || pRecArray == NULL) {
+        CcspTraceWarning(("<%s>[%s]: PsmEnumRecords failed, ret=%d\n",
+                         prog_name, func_name, func_ret));
+        return func_ret;
+    }
+
+    for (i = 0; i < numRec; i++) {
+        /* Only leaf parameters carry a value; skip instance/object nodes */
+        if (pRecArray[i].RecordType != CCSP_BASE_PARAM)
+            continue;
+
+        char        *psmValue   = NULL;
+        unsigned int psmType    = 0;
+        char         typeStr[TYPE_STRING_SIZE] = {0};
+        unsigned int iter       = 0;
+        int          ret        = 0;
+
+        do {
+            ret = PSM_Get_Record_Value2((void*)busHandle,
+                                       subsys_prefix,
+                                       pRecArray[i].Instance.Name,
+                                       &psmType, &psmValue);
+            iter++;
+        } while (psmValue == NULL && iter < 3);
+
+        if (ret == CCSP_SUCCESS && psmValue != NULL) {
+            typeString_from_ccspType(psmType, typeStr);
+            printf("%s %s %s\n", typeStr, pRecArray[i].Instance.Name, psmValue);
+            ((CCSP_MESSAGE_BUS_INFO*)busHandle)->freefunc(psmValue);
+        } else {
+            CcspTraceWarning(("<%s>[%s]: failed to get '%s', ret=%d\n",
+                             prog_name, func_name, pRecArray[i].Instance.Name, ret));
+            if (func_ret == CCSP_SUCCESS)
+                func_ret = ret;
+            if (psmValue != NULL)
+                ((CCSP_MESSAGE_BUS_INFO*)busHandle)->freefunc(psmValue);
+        }
+    }
+
+    free_CCSP_BASE_RECORD((void*)busHandle, pRecArray);
 
     return func_ret;
 }
