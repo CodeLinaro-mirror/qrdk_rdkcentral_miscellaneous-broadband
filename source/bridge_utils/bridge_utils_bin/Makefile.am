@@ -46,6 +46,13 @@ libbridgeutils_la_CPPFLAGS = -I$(top_srcdir)/include \
 libbridgeutils_la_SOURCES = bridge_util.c bridge_creation.c bridge_util_generic.c
 
 libbridgeutils_la_LDFLAGS = -lrt -lccsp_common -lsyscfg -lsysevent -lprivilege -lbridge_utils -lsecure_wrapper -shared -fPIC
+if ONESTACK_PRODUCT_REQ
+libbridgeutils_la_LDFLAGS += -lonestack_syscfg
+endif
+endif
+
+if ONESTACK_PRODUCT_REQ
+bridgeUtils_LDFLAGS += -lonestack_syscfg
 endif
 
 if CORE_NET_LIB_FEATURE_SUPPORT

@@ -36,6 +36,7 @@ AC_ARG_ENABLE([vts_bridge_util],
              ],
              [echo "vts_bridge_util is disabled"])
 AM_CONDITIONAL(FEATURE_VTS_BRIDGE_UTIL, test "x$VTS_BRIDGE_UTIL_ENABLED" = xtrue)
+AM_CONDITIONAL([ONESTACK_PRODUCT_REQ], [test "x$ONESTACK_PRODUCT_REQ" = "xtrue"])
 
 # Checks for Core net lib Feature Support
 AC_ARG_ENABLE([core_net_lib_feature_support],
