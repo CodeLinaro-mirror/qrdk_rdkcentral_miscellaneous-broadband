@@ -1754,7 +1754,7 @@ int updateBridgeInfo(bridgeDetails *bridgeInfo, char* ifNameToBeUpdated, int Opr
 			*/
 			
 			/* Skip adding interface if it does not exist during IF_UP_CMD */
-			if (IF_UP_CMD_TYPE == OprType && INTERFACE_NOT_EXIST == checkIfExists(token))
+			if (type != IF_BRIDGE_BRIDGEUTIL && IF_UP_CMD_TYPE == OprType && INTERFACE_NOT_EXIST == checkIfExists(token))
 			{
 				interfaceExist = false;
 				if (bridgeCreated)
