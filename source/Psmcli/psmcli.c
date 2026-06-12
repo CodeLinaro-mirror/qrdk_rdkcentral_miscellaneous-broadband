@@ -240,22 +240,32 @@ int main(int argc, char**argv)
 #endif
 
     // Check if the number of args is >= 2
+    // Note: "dumpall" takes no extra args so "psmcli dumpall" (argc==2) is valid
     if(argc < 3) {
 
-        help_usage();
-
         if(argc == 2) {
-			rc = strcmp_s( "help", strlen( "help" ), argv[1], &ind );
+			rc = strcmp_s( "dumpall", strlen("dumpall"), argv[1], &ind );
 			ERR_CHK(rc);
-			if(( !ind ) && ( rc == EOK ))
+			if(( ind == 0 ) && ( rc == EOK ))
 			{
-			   exit(0);
+			    /* dumpall needs no additional args - fall through */
 			}
 			else
 			{
-			   exit(CCSP_ERR_INVALID_ARGUMENTS);
+			    help_usage();
+			    rc = strcmp_s( "help", strlen( "help" ), argv[1], &ind );
+			    ERR_CHK(rc);
+			    if(( !ind ) && ( rc == EOK ))
+			    {
+			        exit(0);
+			    }
+			    else
+			    {
+			        exit(CCSP_ERR_INVALID_ARGUMENTS);
+			    }
 			}
         } else {
+            help_usage();
             exit(CCSP_ERR_INVALID_ARGUMENTS);
         }
     }
@@ -264,9 +274,13 @@ int main(int argc, char**argv)
     rc = strcmp_s( "nosubsys", strlen("nosubsys"), argv[1], &ind );
     ERR_CHK(rc);
     if (( ind == 0 ) && ( rc == EOK ))  {
-        if(argc < 4) { // must be followed by a cmd
- 	    help_usage();
-	    exit(CCSP_ERR_INVALID_ARGUMENTS);
+        if(argc < 4) { // must be followed by a cmd (dumpall exception: needs no extra args)
+            rc = strcmp_s( "dumpall", strlen("dumpall"), argv[2], &ind );
+            ERR_CHK(rc);
+            if( !( (ind == 0) && (rc == EOK) ) ) {
+                help_usage();
+                exit(CCSP_ERR_INVALID_ARGUMENTS);
+            }
         }
         subsys_prefix[0] = '\0';  
         local_argc = argc - 1;
@@ -276,22 +290,29 @@ int main(int argc, char**argv)
         rc = strcmp_s( "subsys", strlen("subsys"), argv[1], &ind );
         ERR_CHK(rc);
         if (( ind == 0 ) && ( rc == EOK ))  {
-        if(argc < 5) { // must be followed by a string and then a cmd
- 	    help_usage();
-	    exit(CCSP_ERR_INVALID_ARGUMENTS);
-        }
-        else {
-            rc = strcpy_s(subsys_prefix, sizeof(subsys_prefix), argv[2]);
-            if( rc != EOK )
-            {
-               ERR_CHK(rc);
-               exit( 1 );
+        if(argc < 5) { // must be followed by a string and then a cmd (dumpall exception)
+            /* Allow "psmcli subsys <prefix> dumpall" (argc==4): dumpall needs no value arg */
+            int is_dumpall = 0;
+            if (argc >= 4) {
+                rc = strcmp_s( "dumpall", strlen("dumpall"), argv[3], &ind );
+                ERR_CHK(rc);
+                is_dumpall = ( (ind == 0) && (rc == EOK) );
             }
-
-            subsys_prefix[255] = '\0';  // in case it is not terminated
-            local_argc = argc - 2;
-            local_argv = argv + 2;
+            if( !is_dumpall ) {
+ 	        help_usage();
+	        exit(CCSP_ERR_INVALID_ARGUMENTS);
+            }
         }
+        rc = strcpy_s(subsys_prefix, sizeof(subsys_prefix), argv[2]);
+        if( rc != EOK )
+        {
+           ERR_CHK(rc);
+           exit( 1 );
+        }
+
+        subsys_prefix[255] = '\0';  // in case it is not terminated
+        local_argc = argc - 2;
+        local_argv = argv + 2;
        }
        else { // no subsys nor nosubsys specified, use default prefix
            rc = strcpy_s(subsys_prefix, sizeof(subsys_prefix), PSMCLI_SUBSYSTEM_PREFIX_DEFAULT);
@@ -375,7 +396,8 @@ int main(int argc, char**argv)
     //    CcspTraceDebug(("<%s>: Message_Bus_Init ok.\n", prog_name));
 
     // Check if commands are "get -e" or "getdetail -e"
-    if((strlen(local_argv[2]) == strlen("-e")) && 
+    if(local_argc > 2 &&
+       (strlen(local_argv[2]) == strlen("-e")) && 
        (!strncmp(local_argv[2], "-e", strlen("-e")))) {
     	// "get -e" or "getdetail -e" command
     	tmpLen = strlen(local_argv[1]);
