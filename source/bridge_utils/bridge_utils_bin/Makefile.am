@@ -52,7 +52,7 @@ endif
 endif
 
 if ONESTACK_PRODUCT_REQ
-bridgeUtils_LDADD = -lonestack_syscfg
+bridgeUtils_LIBADD = -lonestack_syscfg
 endif
 
 if CORE_NET_LIB_FEATURE_SUPPORT
