@@ -62,6 +62,14 @@ static rbusHandle_t g_rbus_handle = NULL;
 int AnomalyService_TriggerBatch(const char *mode, const char *job_id);
 int AnomalyService_ResetEngine(void);
 
+/* Forward declaration for event subscription handler */
+static rbusError_t AnomalyEngine_EventSubHandler(rbusHandle_t handle,
+                                                  rbusEventSubAction_t action,
+                                                  const char *eventName,
+                                                  rbusFilter_t filter,
+                                                  int32_t interval,
+                                                  bool *autoPublish);
+
 #define ANOMALY_NUM_RBUS_PARAMS \
     (sizeof(s_rbus_elements) / sizeof(s_rbus_elements[0]))
 
@@ -135,6 +143,11 @@ static rbusDataElement_t s_rbus_elements[] = {
     { ANOMALY_ENGINE_HISTORY_RESULT_DML,
       RBUS_ELEMENT_TYPE_PROPERTY,
       { AnomalyEngine_GetStringHandler, NULL, NULL, NULL, NULL, NULL } },
+
+    /* AnomalyDetected: event published when anomaly is detected */
+    { ANOMALY_ENGINE_EVENT_DML,
+      RBUS_ELEMENT_TYPE_EVENT,
+      { NULL, NULL, NULL, NULL, AnomalyEngine_EventSubHandler, NULL } },
 };
 
 /* Module-private: last history query result JSON (heap-allocated) */
@@ -488,4 +501,96 @@ rbusError_t AnomalyEngine_SetStringHandler(rbusHandle_t handle,
 
     AnomalySvcInfo(("HistoryQuery: built result count=%d\n", count));
     return RBUS_ERROR_SUCCESS;
+}
+
+/* ── Event subscription handler ─────────────────────────────────────────────
+ * Called when a subscriber adds or removes a subscription to the
+ * AnomalyDetected event.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+static rbusError_t AnomalyEngine_EventSubHandler(rbusHandle_t handle,
+                                                  rbusEventSubAction_t action,
+                                                  const char *eventName,
+                                                  rbusFilter_t filter,
+                                                  int32_t interval,
+                                                  bool *autoPublish)
+{
+    (void)handle;
+    (void)filter;
+    (void)interval;
+    (void)autoPublish;
+
+    if (action == RBUS_EVENT_ACTION_SUBSCRIBE) {
+        AnomalySvcInfo(("Subscriber added for event: %s\n", eventName));
+    } else {
+        AnomalySvcInfo(("Subscriber removed for event: %s\n", eventName));
+    }
+
+    return RBUS_ERROR_SUCCESS;
+}
+
+/* ── Anomaly Event Publishing ───────────────────────────────────────────────
+ * Publishes an rbus event when an anomaly is detected.
+ * Agents can subscribe to ANOMALY_ENGINE_EVENT_DML to receive notifications.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+rbusError_t AnomalyService_PublishAnomalyEvent(const char *anomaly_type,
+                                                const char *severity,
+                                                const char *details_json)
+{
+    if (!g_rbus_handle) {
+        AnomalySvcError(("PublishAnomalyEvent: rbus handle not initialized\n"));
+        return RBUS_ERROR_BUS_ERROR;
+    }
+
+    if (!anomaly_type || strcmp(anomaly_type, ANOMALY_TYPE_NONE) == 0) {
+        /* No anomaly — don't publish */
+        return RBUS_ERROR_SUCCESS;
+    }
+
+    /* Build event payload JSON */
+    char payload[1024];
+    time_t now = time(NULL);
+    struct tm *tm_info = gmtime(&now);
+    char timestamp[64];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", tm_info);
+
+    snprintf(payload, sizeof(payload),
+             "{\"anomaly_type\":\"%s\","
+             "\"severity\":\"%s\","
+             "\"timestamp\":\"%s\","
+             "\"details\":%s}",
+             anomaly_type,
+             severity ? severity : "unknown",
+             timestamp,
+             details_json ? details_json : "null");
+
+    /* Create rbus event */
+    rbusEvent_t event;
+    rbusObject_t data;
+    rbusValue_t value;
+
+    rbusValue_Init(&value);
+    rbusValue_SetString(value, payload);
+
+    rbusObject_Init(&data, NULL);
+    rbusObject_SetValue(data, "value", value);
+
+    event.name = ANOMALY_ENGINE_EVENT_DML;
+    event.data = data;
+    event.type = RBUS_EVENT_GENERAL;
+
+    rbusError_t rc = rbusEvent_Publish(g_rbus_handle, &event);
+
+    rbusValue_Release(value);
+    rbusObject_Release(data);
+
+    if (rc != RBUS_ERROR_SUCCESS) {
+        AnomalySvcError(("Failed to publish anomaly event: %d\n", rc));
+    } else {
+        AnomalySvcInfo(("Published anomaly event: type=%s severity=%s\n",
+                        anomaly_type, severity ? severity : "unknown"));
+    }
+
+    return rc;
 }

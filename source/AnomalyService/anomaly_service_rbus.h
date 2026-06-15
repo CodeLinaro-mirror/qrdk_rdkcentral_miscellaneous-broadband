@@ -56,6 +56,15 @@
 #define ANOMALY_ENGINE_HISTORY_QUERY_DML "Device.X_COMCAST_AnomalyEngine.HistoryQuery"
 #define ANOMALY_ENGINE_HISTORY_RESULT_DML "Device.X_COMCAST_AnomalyEngine.HistoryResult"
 
+/* ── Rbus Event for notifying agents of anomaly detection ───────────────── */
+#define ANOMALY_ENGINE_EVENT_DML        "Device.X_COMCAST_AnomalyEngine.AnomalyDetected"
+
+/* Anomaly types for event payload */
+#define ANOMALY_TYPE_NONE       "Normal"
+#define ANOMALY_TYPE_CPU        "CPU"
+#define ANOMALY_TYPE_MEMORY     "Memory"
+#define ANOMALY_TYPE_BOTH       "Both"
+
 #define ANOMALY_RBUS_COMPONENT_NAME     "AnomalyServiceRbus"
 
 /* ── Warmup threshold — mirrors anomaly_app default warmup_samples ───────── */
@@ -93,5 +102,18 @@ rbusError_t AnomalyEngine_SetStringHandler(rbusHandle_t handle,
 rbusError_t AnomalyEngine_GetBoolHandler(rbusHandle_t handle,
                                          rbusProperty_t property,
                                          rbusGetHandlerOptions_t *opts);
+
+/**
+ * Publish an anomaly detection event via rbus.
+ * Called by the anomaly detection engine when an anomaly is detected.
+ *
+ * @param anomaly_type One of: ANOMALY_TYPE_CPU, ANOMALY_TYPE_MEMORY, ANOMALY_TYPE_BOTH
+ * @param severity     Severity level: "low", "medium", "high"
+ * @param details_json JSON string with additional details (can be NULL)
+ * @return RBUS_ERROR_SUCCESS on success
+ */
+rbusError_t AnomalyService_PublishAnomalyEvent(const char *anomaly_type,
+                                                const char *severity,
+                                                const char *details_json);
 
 #endif /* ANOMALY_SERVICE_RBUS_H */
