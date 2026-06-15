@@ -18,23 +18,84 @@
  */
 
 #include "anomaly_service_log.h"
-#include <unistd.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <string.h>
+#include <time.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+static FILE *g_logFile = NULL;
+
+static const char *level_to_string(LogLevel level)
+{
+    switch (level) {
+        case LOG_LEVEL_DEBUG: return "DEBUG";
+        case LOG_LEVEL_INFO:  return "INFO";
+        case LOG_LEVEL_WARN:  return "WARN";
+        case LOG_LEVEL_ERROR: return "ERROR";
+        default:              return "UNKNOWN";
+    }
+}
+
+static bool ensure_log_directory(void)
+{
+    struct stat st = {0};
+    if (stat("/rdklogs/logs", &st) == -1) {
+        if (mkdir("/rdklogs", 0755) == -1 && errno != EEXIST) {
+            return false;
+        }
+        if (mkdir("/rdklogs/logs", 0755) == -1 && errno != EEXIST) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void AnomalyService_Log(LogLevel level, const char *fmt, ...)
+{
+    if (!g_logFile) return;
+
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    char timestamp[32];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+
+    fprintf(g_logFile, "[%s] [%s] ", timestamp, level_to_string(level));
+
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(g_logFile, fmt, args);
+    va_end(args);
+
+    fprintf(g_logFile, "\n");
+    fflush(g_logFile);
+}
 
 bool AnomalyService_Log_Init(void)
 {
-    const char *ini = (access(DEBUG_INI_OVERRIDE_PATH, F_OK) == 0)
-                          ? DEBUG_INI_OVERRIDE_PATH
-                          : DEBUG_INI_NAME;
-
-    if (rdk_logger_init(ini) != RDK_SUCCESS) {
-        fprintf(stderr, "AnomalyService: rdk_logger_init(%s) failed\n", ini);
+    if (!ensure_log_directory()) {
+        fprintf(stderr, "AnomalyService: Failed to create log directory\n");
         return false;
     }
+
+    g_logFile = fopen(ANOMALY_LOG_FILE, "a");
+    if (!g_logFile) {
+        fprintf(stderr, "AnomalyService: Failed to open %s: %s\n",
+                ANOMALY_LOG_FILE, strerror(errno));
+        return false;
+    }
+
+    AnomalySvcInfo("AnomalyService logging initialized");
     return true;
 }
 
 bool AnomalyService_Log_Deinit(void)
 {
-    return (rdk_logger_deinit() == RDK_SUCCESS);
+    if (g_logFile) {
+        AnomalySvcInfo("AnomalyService logging shutdown");
+        fclose(g_logFile);
+        g_logFile = NULL;
+    }
+    return true;
 }

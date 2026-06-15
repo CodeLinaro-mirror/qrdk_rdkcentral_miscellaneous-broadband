@@ -159,16 +159,16 @@ static pthread_mutex_t s_history_mutex = PTHREAD_MUTEX_INITIALIZER;
 rbusError_t AnomalyService_Rbus_Init(void)
 {
     int rc;
-    AnomalySvcDebug(("In %s\n", __FUNCTION__));
+    AnomalySvcDebug("In %s", __FUNCTION__);
 
     if (RBUS_ENABLED != rbus_checkStatus()) {
-        AnomalySvcError(("rbus is not enabled; cannot register parameters\n"));
+        AnomalySvcError("rbus is not enabled; cannot register parameters");
         return RBUS_ERROR_BUS_ERROR;
     }
 
     rc = rbus_open(&g_rbus_handle, ANOMALY_RBUS_COMPONENT_NAME);
     if (rc != RBUS_ERROR_SUCCESS) {
-        AnomalySvcError(("rbus_open failed: %d\n", rc));
+        AnomalySvcError("rbus_open failed: %d", rc);
         return rc;
     }
 
@@ -176,14 +176,14 @@ rbusError_t AnomalyService_Rbus_Init(void)
                               (int)ANOMALY_NUM_RBUS_PARAMS,
                               s_rbus_elements);
     if (rc != RBUS_ERROR_SUCCESS) {
-        AnomalySvcError(("rbus_regDataElements failed: %d\n", rc));
+        AnomalySvcError("rbus_regDataElements failed: %d", rc);
         rbus_close(g_rbus_handle);
         g_rbus_handle = NULL;
         return rc;
     }
 
-    AnomalySvcInfo(("rbus registered %zu AnomalyEngine parameters\n",
-                    ANOMALY_NUM_RBUS_PARAMS));
+    AnomalySvcInfo("rbus registered %zu AnomalyEngine parameters",
+                   ANOMALY_NUM_RBUS_PARAMS);
     return RBUS_ERROR_SUCCESS;
 }
 
@@ -246,7 +246,7 @@ rbusError_t AnomalyEngine_GetUIntHandler(rbusHandle_t handle,
     rbusValue_t val;
     rbusValue_Init(&val);
 
-    AnomalySvcDebug(("GET %s\n", name));
+    AnomalySvcDebug("GET %s", name);
 
     pthread_mutex_lock(&g_state_mutex);
 
@@ -286,7 +286,7 @@ rbusError_t AnomalyEngine_GetBoolHandler(rbusHandle_t handle,
     rbusValue_t val;
     rbusValue_Init(&val);
 
-    AnomalySvcDebug(("GET %s\n", name));
+    AnomalySvcDebug("GET %s", name);
 
     pthread_mutex_lock(&g_state_mutex);
 
@@ -320,7 +320,7 @@ rbusError_t AnomalyEngine_GetStringHandler(rbusHandle_t handle,
 
     char strbuf[2048] = {0};
 
-    AnomalySvcDebug(("GET %s\n", name));
+    AnomalySvcDebug("GET %s", name);
 
     if (strcmp(name, ANOMALY_ENGINE_MODE_DML) == 0) {
         snprintf(strbuf, sizeof(strbuf), "batch");
@@ -371,20 +371,20 @@ rbusError_t AnomalyEngine_SetUIntHandler(rbusHandle_t handle,
     rbusValue_t val  = rbusProperty_GetValue(property);
     uint32_t    v    = rbusValue_GetUInt32(val);
 
-    AnomalySvcInfo(("SET %s = %u\n", name, v));
+    AnomalySvcInfo("SET %s = %u", name, v);
 
     if (strcmp(name, ANOMALY_ENGINE_TRIGGER_DML) == 0) {
         if (v == 0) return RBUS_ERROR_SUCCESS;
         const char *mode = (v == 2) ? "single" : "batch";
         if (AnomalyService_TriggerBatch(mode, NULL) != 0) {
-            AnomalySvcError(("TriggerInference SET failed\n"));
+            AnomalySvcError("TriggerInference SET failed");
             return RBUS_ERROR_BUS_ERROR;
         }
 
     } else if (strcmp(name, ANOMALY_ENGINE_RESET_DML) == 0) {
         if (v == 1) {
             if (AnomalyService_ResetEngine() != 0) {
-                AnomalySvcError(("ResetState SET failed\n"));
+                AnomalySvcError("ResetState SET failed");
                 return RBUS_ERROR_BUS_ERROR;
             }
         }
@@ -409,7 +409,7 @@ rbusError_t AnomalyEngine_SetStringHandler(rbusHandle_t handle,
     rbusValue_t val  = rbusProperty_GetValue(property);
     const char *query_json = rbusValue_GetString(val, NULL);
 
-    AnomalySvcInfo(("SET %s = %s\n", name, query_json ? query_json : "(null)"));
+    AnomalySvcInfo("SET %s = %s", name, query_json ? query_json : "(null)");
 
     if (strcmp(name, ANOMALY_ENGINE_HISTORY_QUERY_DML) != 0)
         return RBUS_ERROR_SUCCESS;
@@ -499,7 +499,7 @@ rbusError_t AnomalyEngine_SetStringHandler(rbusHandle_t handle,
     s_history_result = result_buf;
     pthread_mutex_unlock(&s_history_mutex);
 
-    AnomalySvcInfo(("HistoryQuery: built result count=%d\n", count));
+    AnomalySvcInfo("HistoryQuery: built result count=%d", count);
     return RBUS_ERROR_SUCCESS;
 }
 
@@ -521,9 +521,9 @@ static rbusError_t AnomalyEngine_EventSubHandler(rbusHandle_t handle,
     (void)autoPublish;
 
     if (action == RBUS_EVENT_ACTION_SUBSCRIBE) {
-        AnomalySvcInfo(("Subscriber added for event: %s\n", eventName));
+        AnomalySvcInfo("Subscriber added for event: %s", eventName);
     } else {
-        AnomalySvcInfo(("Subscriber removed for event: %s\n", eventName));
+        AnomalySvcInfo("Subscriber removed for event: %s", eventName);
     }
 
     return RBUS_ERROR_SUCCESS;
@@ -539,7 +539,7 @@ rbusError_t AnomalyService_PublishAnomalyEvent(const char *anomaly_type,
                                                 const char *details_json)
 {
     if (!g_rbus_handle) {
-        AnomalySvcError(("PublishAnomalyEvent: rbus handle not initialized\n"));
+        AnomalySvcError("PublishAnomalyEvent: rbus handle not initialized");
         return RBUS_ERROR_BUS_ERROR;
     }
 
@@ -586,10 +586,10 @@ rbusError_t AnomalyService_PublishAnomalyEvent(const char *anomaly_type,
     rbusObject_Release(data);
 
     if (rc != RBUS_ERROR_SUCCESS) {
-        AnomalySvcError(("Failed to publish anomaly event: %d\n", rc));
+        AnomalySvcError("Failed to publish anomaly event: %d", rc);
     } else {
-        AnomalySvcInfo(("Published anomaly event: type=%s severity=%s\n",
-                        anomaly_type, severity ? severity : "unknown"));
+        AnomalySvcInfo("Published anomaly event: type=%s severity=%s",
+                       anomaly_type, severity ? severity : "unknown");
     }
 
     return rc;

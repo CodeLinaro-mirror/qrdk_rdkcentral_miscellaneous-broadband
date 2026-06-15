@@ -123,7 +123,7 @@ static int read_last_lines(const char *path, int n,
 
     FILE *fp = fopen(path, "r");
     if (!fp) {
-        AnomalySvcWarn(("anomaly_csv: cannot open %s\n", path));
+        AnomalySvcWarn("anomaly_csv: cannot open %s", path);
         return -1;
     }
 

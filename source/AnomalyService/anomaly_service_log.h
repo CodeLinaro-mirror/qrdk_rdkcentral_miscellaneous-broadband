@@ -21,21 +21,23 @@
 #define ANOMALY_SERVICE_LOG_H
 
 #include <stdbool.h>
-#include "rdk_debug.h"
 
-#define DEBUG_INI_NAME          "/etc/debug.ini"
-#define DEBUG_INI_OVERRIDE_PATH "/nvram/debug.ini"
-#define ARGS_EXTRACT(msg ...)    msg
+#define ANOMALY_LOG_FILE  "/rdklogs/logs/AnomalyService.txt"
 
-#define ANOMALY_SVC_LOG(level, msg) \
-    RDK_LOG(level, "LOG.RDK.ANOMALYSVC", ARGS_EXTRACT msg)
+typedef enum {
+    LOG_LEVEL_DEBUG,
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_WARN,
+    LOG_LEVEL_ERROR
+} LogLevel;
 
-#define AnomalySvcError(msg)    ANOMALY_SVC_LOG(RDK_LOG_ERROR, msg)
-#define AnomalySvcInfo(msg)     ANOMALY_SVC_LOG(RDK_LOG_INFO,  msg)
-#define AnomalySvcWarn(msg)     ANOMALY_SVC_LOG(RDK_LOG_WARN,  msg)
-#define AnomalySvcDebug(msg)    ANOMALY_SVC_LOG(RDK_LOG_DEBUG, msg)
+#define AnomalySvcError(fmt, ...)  AnomalyService_Log(LOG_LEVEL_ERROR, fmt, ##__VA_ARGS__)
+#define AnomalySvcWarn(fmt, ...)   AnomalyService_Log(LOG_LEVEL_WARN,  fmt, ##__VA_ARGS__)
+#define AnomalySvcInfo(fmt, ...)   AnomalyService_Log(LOG_LEVEL_INFO,  fmt, ##__VA_ARGS__)
+#define AnomalySvcDebug(fmt, ...)  AnomalyService_Log(LOG_LEVEL_DEBUG, fmt, ##__VA_ARGS__)
 
 bool AnomalyService_Log_Init(void);
 bool AnomalyService_Log_Deinit(void);
+void AnomalyService_Log(LogLevel level, const char *fmt, ...);
 
 #endif /* ANOMALY_SERVICE_LOG_H */

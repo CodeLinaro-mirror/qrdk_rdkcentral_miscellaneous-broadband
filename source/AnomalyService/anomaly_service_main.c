@@ -99,6 +99,9 @@
 /* Restart anomaly_app daemon if it exits unexpectedly */
 #define ANOMALY_RESTART_DELAY_S  5
 
+/* Result watcher polling interval */
+#define ANOMALY_RESULT_POLL_S    2
+
 /* ── Global shared state (extern in rbus / http units) ──────────────────── */
 volatile sig_atomic_t g_running    = 1;
 pid_t                 g_engine_pid = -1;  /* anomaly_app daemon PID   */
@@ -111,7 +114,8 @@ char  g_result_path[256];           /* results CSV path                     */
 char  g_delegate_path[256];         /* TFLite external delegate .so  (-d)   */
 char  g_delegate_options[512];      /* delegate option string               */
 pthread_mutex_t g_state_mutex = PTHREAD_MUTEX_INITIALIZER;
-
+/* Last processed record count for result watcher */
+static int g_last_record_count = 0;
 /* ── Signal handler ─────────────────────────────────────────────────────── */
 static void sig_handler(int sig)
 {
@@ -159,8 +163,7 @@ static pid_t spawn_engine_daemon(void)
 {
     pid_t pid = fork();
     if (pid < 0) {
-        AnomalySvcError(("spawn_engine_daemon: fork failed: %s\n",
-                         strerror(errno)));
+        AnomalySvcError("spawn_engine_daemon: fork failed: %s", strerror(errno));
         return -1;
     }
 
@@ -205,7 +208,7 @@ static pid_t spawn_engine_daemon(void)
         _exit(127);
     }
 
-    AnomalySvcInfo(("anomaly_app daemon started pid=%d\n", (int)pid));
+    AnomalySvcInfo("anomaly_app daemon started pid=%d", (int)pid);
     return pid;
 }
 
@@ -228,15 +231,14 @@ int AnomalyService_TriggerBatch(const char *mode, const char *job_id)
     /* If a previous trigger job is still running, report busy */
     if (g_trigger_pid > 0 && kill(g_trigger_pid, 0) == 0) {
         pthread_mutex_unlock(&g_state_mutex);
-        AnomalySvcWarn(("TriggerBatch: previous job pid=%d still running\n",
-                        (int)g_trigger_pid));
+        AnomalySvcWarn("TriggerBatch: previous job pid=%d still running", (int)g_trigger_pid);
         return -1;
     }
 
     pid_t pid = fork();
     if (pid < 0) {
         pthread_mutex_unlock(&g_state_mutex);
-        AnomalySvcError(("TriggerBatch: fork failed: %s\n", strerror(errno)));
+        AnomalySvcError("TriggerBatch: fork failed: %s", strerror(errno));
         return -1;
     }
 
@@ -285,9 +287,8 @@ int AnomalyService_TriggerBatch(const char *mode, const char *job_id)
     g_trigger_pid = pid;
     pthread_mutex_unlock(&g_state_mutex);
 
-    AnomalySvcInfo(("TriggerBatch: spawned pid=%d mode=%s job_id=%s\n",
-                    (int)pid, mode ? mode : "batch",
-                    job_id ? job_id : "(none)"));
+    AnomalySvcInfo("TriggerBatch: spawned pid=%d mode=%s job_id=%s",
+                   (int)pid, mode ? mode : "batch", job_id ? job_id : "(none)");
     return 0;
 }
 
@@ -305,8 +306,7 @@ int AnomalyService_ResetEngine(void)
     pthread_mutex_lock(&g_state_mutex);
 
     if (g_engine_pid > 0) {
-        AnomalySvcInfo(("ResetEngine: terminating daemon pid=%d\n",
-                        (int)g_engine_pid));
+        AnomalySvcInfo("ResetEngine: terminating daemon pid=%d", (int)g_engine_pid);
         kill(g_engine_pid, SIGTERM);
 
         /* Wait up to 3 seconds for graceful exit */
@@ -318,7 +318,7 @@ int AnomalyService_ResetEngine(void)
 
         /* Force-kill if still alive */
         if (kill(g_engine_pid, 0) == 0) {
-            AnomalySvcWarn(("ResetEngine: daemon did not exit; sending SIGKILL\n"));
+            AnomalySvcWarn("ResetEngine: daemon did not exit; sending SIGKILL");
             kill(g_engine_pid, SIGKILL);
         }
         waitpid(g_engine_pid, NULL, WNOHANG);
@@ -337,7 +337,7 @@ int AnomalyService_ResetEngine(void)
 static void *watchdog_thread(void *arg)
 {
     (void)arg;
-    AnomalySvcInfo(("Watchdog thread started\n"));
+    AnomalySvcInfo("Watchdog thread started");
 
     while (g_running) {
         sleep(ANOMALY_RESTART_DELAY_S);
@@ -350,7 +350,7 @@ static void *watchdog_thread(void *arg)
         if (!g_running) break;
 
         if (needs_restart) {
-            AnomalySvcWarn(("Watchdog: anomaly_app not running; restarting\n"));
+            AnomalySvcWarn("Watchdog: anomaly_app not running; restarting");
 
             pthread_mutex_lock(&g_state_mutex);
             if (g_engine_pid > 0)
@@ -360,10 +360,90 @@ static void *watchdog_thread(void *arg)
         }
     }
 
-    AnomalySvcInfo(("Watchdog thread exited\n"));
+    AnomalySvcInfo("Watchdog thread exited");
     return NULL;
 }
+/* ── Result watcher — monitors CSV for new anomalies and publishes events ─ */
+static void *result_watcher_thread(void *arg)
+{
+    (void)arg;
+    AnomalySvcInfo("Result watcher thread started");
 
+    /* Initialize record count */
+    int total = 0, anom = 0;
+    anomaly_csv_count_records(g_result_path, &total, &anom);
+    g_last_record_count = total;
+    AnomalySvcDebug("Result watcher: initial record count = %d", total);
+
+    while (g_running) {
+        sleep(ANOMALY_RESULT_POLL_S);
+        if (!g_running) break;
+
+        /* Check current record count */
+        int current_total = 0, current_anom = 0;
+        if (anomaly_csv_count_records(g_result_path, &current_total, &current_anom) != 0) {
+            continue;
+        }
+
+        /* Check for new records */
+        if (current_total > g_last_record_count) {
+            AnomalySvcDebug("Result watcher: new records detected (%d -> %d)",
+                            g_last_record_count, current_total);
+
+            /* Read the latest record */
+            AnomalyRecord latest;
+            if (anomaly_csv_read_latest(g_result_path, &latest) == 0) {
+                /* Check if it's an anomaly */
+                if (strcmp(latest.anomaly_type, ANOMALY_TYPE_NONE) != 0) {
+                    /* Determine overall severity */
+                    const char *severity = "unknown";
+                    float max_ratio = (latest.cpu_sev_ratio > latest.mem_sev_ratio)
+                                      ? latest.cpu_sev_ratio : latest.mem_sev_ratio;
+
+                    if (max_ratio >= 5.0f) {
+                        severity = "high";
+                    } else if (max_ratio >= 2.0f) {
+                        severity = "medium";
+                    } else {
+                        severity = "low";
+                    }
+
+                    /* Build details JSON */
+                    char details_json[512];
+                    snprintf(details_json, sizeof(details_json),
+                             "{\"timestamp\":\"%s\","
+                             "\"device_mac\":\"%s\","
+                             "\"cpu_mse\":%.6f,"
+                             "\"mem_mse\":%.6f,"
+                             "\"cpu_flag\":%d,"
+                             "\"mem_flag\":%d,"
+                             "\"cpu_severity_ratio\":%.2f,"
+                             "\"mem_severity_ratio\":%.2f}",
+                             latest.timestamp, latest.cmmac,
+                             (double)latest.cpu_mse, (double)latest.mem_mse,
+                             latest.cpu_flag, latest.mem_flag,
+                             (double)latest.cpu_sev_ratio, (double)latest.mem_sev_ratio);
+
+                    AnomalySvcInfo("Publishing anomaly event: type=%s severity=%s",
+                                   latest.anomaly_type, severity);
+
+                    /* Publish the event */
+                    rbusError_t rc = AnomalyService_PublishAnomalyEvent(
+                        latest.anomaly_type, severity, details_json);
+
+                    if (rc != RBUS_ERROR_SUCCESS) {
+                        AnomalySvcError("Failed to publish anomaly event: %d", rc);
+                    }
+                }
+            }
+
+            g_last_record_count = current_total;
+        }
+    }
+
+    AnomalySvcInfo("Result watcher thread exited");
+    return NULL;
+}
 /* ── main ───────────────────────────────────────────────────────────────── */
 int main(int argc, char *argv[])
 {
@@ -373,7 +453,7 @@ int main(int argc, char *argv[])
 
     /* ── Logging ── */
     AnomalyService_Log_Init();
-    AnomalySvcInfo(("AnomalyService starting\n"));
+    AnomalySvcInfo("AnomalyService starting");
 
     /* ── Resolve configurable paths ── */
     const char *env;
@@ -406,13 +486,13 @@ int main(int argc, char *argv[])
     snprintf(g_delegate_options, sizeof(g_delegate_options),
              "%s", env ? env : ANOMALY_DELEGATE_OPTIONS);
 
-    AnomalySvcInfo(("  binary          : %s\n", g_anomaly_app_path));
-    AnomalySvcInfo(("  cpu config (-c) : %s\n", g_config_path));
-    AnomalySvcInfo(("  mem config      : %s\n", g_mem_config_path));
-    AnomalySvcInfo(("  watch path      : %s\n", g_watch_path));
-    AnomalySvcInfo(("  result path     : %s\n", g_result_path));
-    AnomalySvcInfo(("  delegate (-d)   : %s\n", g_delegate_path));
-    AnomalySvcInfo(("  delegate opts   : %s\n", g_delegate_options));
+    AnomalySvcInfo("  binary          : %s", g_anomaly_app_path);
+    AnomalySvcInfo("  cpu config (-c) : %s", g_config_path);
+    AnomalySvcInfo("  mem config      : %s", g_mem_config_path);
+    AnomalySvcInfo("  watch path      : %s", g_watch_path);
+    AnomalySvcInfo("  result path     : %s", g_result_path);
+    AnomalySvcInfo("  delegate (-d)   : %s", g_delegate_path);
+    AnomalySvcInfo("  delegate opts   : %s", g_delegate_options);
 
     /* ── Signal setup ── */
     signal(SIGTERM, sig_handler);
@@ -425,23 +505,28 @@ int main(int argc, char *argv[])
     pthread_mutex_unlock(&g_state_mutex);
 
     if (g_engine_pid < 0) {
-        AnomalySvcError(("Failed to start anomaly_app; continuing without it\n"));
+        AnomalySvcError("Failed to start anomaly_app; continuing without it");
     }
 
     /* ── rbus registration ── */
     if (AnomalyService_Rbus_Init() != RBUS_ERROR_SUCCESS) {
-        AnomalySvcError(("rbus init failed; cannot register TR-181 parameters\n"));
+        AnomalySvcError("rbus init failed; cannot register TR-181 parameters");
         return 1;
     }
 
     /* ── Watchdog thread ── */
     pthread_t wd_tid;
     if (pthread_create(&wd_tid, NULL, watchdog_thread, NULL) != 0) {
-        AnomalySvcError(("Failed to create watchdog thread: %s\n",
-                         strerror(errno)));
+        AnomalySvcError("Failed to create watchdog thread: %s", strerror(errno));
     }
 
-    AnomalySvcInfo(("AnomalyService ready\n"));
+    /* ── Result watcher thread — monitors for anomalies and publishes events ── */
+    pthread_t rw_tid;
+    if (pthread_create(&rw_tid, NULL, result_watcher_thread, NULL) != 0) {
+        AnomalySvcError("Failed to create result watcher thread: %s", strerror(errno));
+    }
+
+    AnomalySvcInfo("AnomalyService ready");
 
     /* ── Main loop: idle until shutdown signal ── */
     while (g_running) {
@@ -449,11 +534,12 @@ int main(int argc, char *argv[])
     }
 
     /* ── Shutdown ── */
-    AnomalySvcInfo(("AnomalyService shutting down\n"));
+    AnomalySvcInfo("AnomalyService shutting down");
 
     AnomalyService_Rbus_Deinit();
 
     pthread_join(wd_tid, NULL);
+    pthread_join(rw_tid, NULL);
 
     /* Terminate anomaly_app daemon */
     pthread_mutex_lock(&g_state_mutex);
