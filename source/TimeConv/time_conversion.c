@@ -45,14 +45,77 @@ static int getLocalTimeStr(char *pTime, char *pDate);
 static int validateTime(char *pTime);
 
 #ifdef UTC_ENABLE
-int getTimeOffsetFromSysevent(char *name);
+int getTimeOffsetFromSysevent(char *name, int version);
+#define VALUE_ALREADY_IN_DECIMAL       -1
+#define INVALID_TIME_OFFSET_VAL         0
 
-int getTimeOffsetFromSysevent(char *name)
+static int hexToInt(char s[])
+{
+    int hexdigit, i, num;
+    bool inputIsValid;
+    bool hexDigitFound = false ;
+
+    i=0;
+    if(s[i] == '0') {
+        ++i;
+        if(s[i] == 'x' || s[i] == 'X'){
+            ++i;
+        }
+    }
+    else if ( s[i] == '-' )
+    {
+        ++i;
+        if ( s[i] == '\0' )
+        {
+            return INVALID_TIME_OFFSET_VAL ;
+        }
+    }
+    num = 0;
+    inputIsValid = true;
+    for(; inputIsValid == true; ++i) {
+        if ( s[i] == '\0' )
+        {
+            break;
+        }
+        else if(s[i] >= '0' && s[i] <= '9') {
+            hexdigit = s[i] - '0';
+        } else if(s[i] >= 'a' && s[i] <= 'f') {
+            hexDigitFound = true;
+            hexdigit = s[i] - 'a' + 10;
+        } else if(s[i] >= 'A' && s[i] <= 'F') {
+            hexDigitFound = true;
+            hexdigit = s[i] - 'A' + 10;
+        } else {
+            inputIsValid = false;   
+            break;
+        }
+        if(inputIsValid == true ) {
+            num = 16 * num + hexdigit;
+        }
+
+    }
+
+    if (inputIsValid == false )
+    {
+        return INVALID_TIME_OFFSET_VAL ;
+    }
+    else if (hexDigitFound == false)
+    {
+        return VALUE_ALREADY_IN_DECIMAL ;
+    }
+    else
+    {
+        return num;
+    }
+}
+
+int getTimeOffsetFromSysevent(char *name, int version)
 {
     char a[100];
     FILE *fp;
     int off = -1;
     char cmd[100] = {0};
+    int decimal_Conv_Value = 0 ;
     snprintf(cmd, sizeof(cmd), "sysevent get %s",name);
     fp = popen(cmd,"r");
     if(fp != NULL)
@@ -64,8 +127,23 @@ int getTimeOffsetFromSysevent(char *name)
         {
             if(a[0] != '@')
             {
-                //Offset is Decimal now, which was converted from HEX to Decimal by DHCPMANAGER
-                off = atoi(a);
+                if(version == 6)
+                {
+                    decimal_Conv_Value = hexToInt(a) ;
+
+                    if ( decimal_Conv_Value == VALUE_ALREADY_IN_DECIMAL )
+                    {
+                        off = atoi(a);
+                    }
+                    else
+                    {
+                        off = decimal_Conv_Value;
+                    }     
+                }
+                else
+                {
+                    off = atoi(a);
+                }
             }
             else
             {
@@ -85,13 +163,13 @@ time_t getOffset()
     char a[100];
     if (!access("/nvram/ETHWAN_ENABLE", 0))
     {
-       off = getTimeOffsetFromSysevent("ipv6-timeoffset");
+       off = getTimeOffsetFromSysevent("ipv6-timeoffset",6);
        if(off != -1)
        {
          return off;
        }
        
-       off = getTimeOffsetFromSysevent("ipv4-timeoffset");
+       off = getTimeOffsetFromSysevent("ipv4-timeoffset",4);
        if(off != -1)
        {
          return off;
