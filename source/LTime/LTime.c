@@ -34,37 +34,8 @@
 #define DATE_FMT_M "%M"
 
 #ifdef UTC_ENABLE
-static int hexToInt(char s[])
-{
-    int hexdigit, i, num;
-    bool inputIsValid;
-    i=0;
-    if(s[i] == '0') {
-        ++i;
-        if(s[i] == 'x' || s[i] == 'X'){
-            ++i;
-        }
-    }
-    num = 0;
-    inputIsValid = true;
-    for(; inputIsValid == true; ++i) {
-        if(s[i] >= '0' && s[i] <= '9') {
-            hexdigit = s[i] - '0';
-        } else if(s[i] >= 'a' && s[i] <= 'f') {
-            hexdigit = s[i] - 'a' + 10;
-        } else if(s[i] >= 'A' && s[i] <= 'F') {
-            hexdigit = s[i] - 'A' + 10;
-        } else {
-            inputIsValid = false;
-        }
-        if(inputIsValid == true) {
-            num = 16 * num + hexdigit;
-        }
-    }
-    return num;
-}
 
-int getTimeOffsetFromSysevent(char *name, int version)
+int getTimeOffsetFromSysevent(char *name)
 {
     char a[100];
     FILE *fp;
@@ -79,10 +50,8 @@ int getTimeOffsetFromSysevent(char *name, int version)
         {
             if(a[0] != '@')
             {
-                if(version == 6)
-                    off = hexToInt(a);
-                else
-                    off = atoi(a);
+                //Offset is Decimal now, which was converted from HEX to Decimal by DHCPMANAGER
+                off = atoi(a);
             }
             else
             {
@@ -112,13 +81,13 @@ time_t getOffset()
 	}
     }
 
-    off = getTimeOffsetFromSysevent("ipv6-timeoffset", 6);
+    off = getTimeOffsetFromSysevent("ipv6-timeoffset");
     if(off != -1)
     {
         return off;
     }
 
-    off = getTimeOffsetFromSysevent("ipv4-timeoffset", 4);
+    off = getTimeOffsetFromSysevent("ipv4-timeoffset");
     if(off != -1)
     {
         return off;
