@@ -116,8 +116,18 @@ int can_proceed_fw_download(void)
 
     uint64_t fw_kb = 0;
     uint64_t avail_kb = 0;
+    uint64_t inactive_anon_kb = 0;
     uint64_t rsrv_mb = 0, rsrv_kb = 0;
     int imgp_pct = 0;
+
+    // Holds entry information from /proc/swaps
+    struct proc_swaps_entry {
+        char filename[64];
+        char type[64];
+        uint64_t size;
+        uint64_t used;
+        int8_t priority;
+    };
 
     if(syscfg_get(NULL,"xconf_url",url, sizeof(url)) != 0){
         XCONF_LOG_ERROR("[FWCHK] Failed to get xconf_url\n");
@@ -172,7 +182,12 @@ int can_proceed_fw_download(void)
                 char *p = line + 13;
                 while (*p && !isdigit((unsigned char)*p)) ++p;
                 avail_kb = strtoull(p, NULL, 10);
-                break;
+            }
+
+            if (strncmp(line, "Inactive(anon):", 15) == 0) {
+                char *p = line + 15;
+                while (*p && !isdigit((unsigned char)*p)) ++p;
+                inactive_anon_kb = strtoull(p, NULL, 10);
             }
         }
         fclose(fp);
@@ -182,6 +197,88 @@ int can_proceed_fw_download(void)
             return FW_DWNLD_MEMCHK_FAILED;
         }
         XCONF_LOG_INFO("[FWCHK] MemAvailable: %" PRIu64 " kB\n", avail_kb);
+
+        fp = fopen("/proc/swaps","r");
+        if (fp) {
+            while (fgets(line, sizeof(line), fp)) {
+                struct proc_swaps_entry entry = {0};
+                int num_fields_scanned = sscanf(line, "%s %s %"SCNu64" %"SCNu64 " %"SCNd8, 
+                                            entry.filename,
+                                            entry.type,
+                                            &entry.size,
+                                            &entry.used,
+                                            &entry.priority);
+                if (num_fields_scanned != 5) {
+                    continue;
+                }
+
+                if (strstr(entry.type, "file") != 0) {
+                    // Add the additional bytes available in swap to available KB
+                    uint64_t swap_kbytes_available = entry.size - entry.used;
+                    XCONF_LOG_INFO("[FWCHK] Swap file found %s, adding %" PRIu64 " kB to available memory\n", entry.filename, swap_kbytes_available);
+                    avail_kb += swap_kbytes_available;
+                } else if (strstr(entry.type, "partition") != 0) {
+                    if (strstr(entry.filename, "zram")) {
+                        // Acquire the ZRAM block device name from the file name (e.g. /dev/zram0 -> zram0)
+                        char *zram_block_device = strrchr(entry.filename, '/');
+                        if (zram_block_device == NULL) {
+                            XCONF_LOG_ERROR("[FWCHK] Failed to extract zram block device from %s\n", entry.filename);
+                            continue;
+                        }
+                        zram_block_device = zram_block_device + 1;
+
+                        // Format the path to the ZRAM block device's mm_stat file (e.g. /sys/block/zram0/mm_stat)
+                        char mm_stat_file_path[64];
+                        snprintf(mm_stat_file_path, sizeof(mm_stat_file_path), "/sys/block/%s/mm_stat", zram_block_device);
+
+                        uint64_t orig_data_size = 0;
+                        uint64_t compr_data_size = 0;
+                        uint64_t mem_used_total = 0;
+                        FILE *mm_stat = fopen(mm_stat_file_path, "r");
+                        if (mm_stat == NULL) {
+                            XCONF_LOG_ERROR("[FWCHK] Cannot read %s\n", mm_stat_file_path);
+                            continue;
+                        }
+
+                        num_fields_scanned = fscanf(mm_stat, "%" PRIu64 " %" PRIu64 " %" PRIu64,
+                               &orig_data_size,
+                               &compr_data_size,
+                               &mem_used_total);
+                        if (num_fields_scanned != 3) {
+                            fclose(mm_stat);
+                            continue;
+                        }
+
+                        fclose(mm_stat);
+
+                        // Calculate the ZRAM compression ratio by dividing the data's original size prior to compression and its total compressed
+                        // size within the swap partition
+                        double zram_compression_ratio = (double)orig_data_size / (double)mem_used_total;
+
+                        // Consider the KBytes available in the ZRAM swap partition to be the minimum between the calculated free space and current
+                        // inactive anonymous pages
+                        uint64_t zram_swap_kbytes_available = entry.size - entry.used;
+                        if (inactive_anon_kb < zram_swap_kbytes_available) {
+                            zram_swap_kbytes_available = inactive_anon_kb;
+                        }
+
+                        // Deduct from the KBytes available in ZRAM partition based on the calculated compression ratio
+                        zram_swap_kbytes_available = (uint64_t)((double)zram_swap_kbytes_available - ((double)zram_swap_kbytes_available / zram_compression_ratio));
+                        XCONF_LOG_INFO("[FWCHK] ZRAM swap partition found %s, adding %" PRIu64 " kB to available memory\n", entry.filename, zram_swap_kbytes_available);
+                        avail_kb += zram_swap_kbytes_available;
+                    } else {
+                        // Add the additional bytes available in swap to available KB
+                        uint64_t swap_kbytes_available = entry.size - entry.used;
+                        XCONF_LOG_INFO("[FWCHK] Swap partition found %s, adding %" PRIu64 " kB to available memory\n", entry.filename, swap_kbytes_available);
+                        avail_kb += swap_kbytes_available;
+                    }
+                }
+            }
+
+            fclose(fp);
+        } else {
+            XCONF_LOG_ERROR("[FWCHK] Cannot read /proc/swaps\n");
+        }
     }
 
     if(syscfg_get(NULL, "FwDwld_AvlMem_RsrvThreshold", buf, sizeof(buf)) != 0){
