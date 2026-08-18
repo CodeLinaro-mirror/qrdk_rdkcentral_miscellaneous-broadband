@@ -17,6 +17,7 @@
  * limitations under the License.
 */
 #define _GNU_SOURCE 1
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -198,7 +199,7 @@ int can_proceed_fw_download(void)
         }
         XCONF_LOG_INFO("[FWCHK] MemAvailable: %" PRIu64 " kB\n", avail_kb);
 
-        fp = fopen("/proc/swaps","r");
+        fp = fopen("/proc/swaps", "r");
         if (fp) {
             while (fgets(line, sizeof(line), fp)) {
                 struct proc_swaps_entry entry = {0};
@@ -277,7 +278,7 @@ int can_proceed_fw_download(void)
 
             fclose(fp);
         } else {
-            XCONF_LOG_ERROR("[FWCHK] Cannot read /proc/swaps\n");
+            XCONF_LOG_ERROR("[FWCHK] Cannot read /proc/swaps: err=%s\n", strerror(errno));
         }
     }
 
