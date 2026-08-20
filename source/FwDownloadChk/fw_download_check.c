@@ -203,7 +203,12 @@ int can_proceed_fw_download(void)
         if (fp) {
             while (fgets(line, sizeof(line), fp)) {
                 struct proc_swaps_entry entry = {0};
-                int num_fields_scanned = sscanf(line, "%s %s %"SCNu64" %"SCNu64 " %"SCNd8, 
+                char fmt[256];
+                snprintf(fmt, sizeof(fmt), "%%%zus %%%zus %%%s %%%s %%%s",
+                         sizeof(entry.filename) - 1,
+                         sizeof(entry.type) - 1,
+                         SCNu64, SCNu64, SCNd8);
+                int num_fields_scanned = sscanf(line, fmt,
                                             entry.filename,
                                             entry.type,
                                             &entry.size,
@@ -241,7 +246,7 @@ int can_proceed_fw_download(void)
                             continue;
                         }
 
-                        num_fields_scanned = fscanf(mm_stat, "%" PRIu64 " %" PRIu64 " %" PRIu64,
+                        num_fields_scanned = fscanf(mm_stat, "%" SCNu64 " %" SCNu64 " %" SCNu64,
                                &orig_data_size,
                                &compr_data_size,
                                &mem_used_total);
@@ -254,7 +259,13 @@ int can_proceed_fw_download(void)
 
                         // Calculate the ZRAM compression ratio by dividing the data's original size prior to compression and its total compressed
                         // size within the swap partition
-                        double zram_compression_ratio = (double)orig_data_size / (double)mem_used_total;
+                        double zram_compression_ratio = 1.0;
+                        if (mem_used_total > 0) {
+                            zram_compression_ratio = (double)orig_data_size / (double)mem_used_total;
+                            if (zram_compression_ratio < 1.0) {
+                                zram_compression_ratio = 1.0;
+                            }
+                        }
 
                         // Consider the KBytes available in the ZRAM swap partition to be the minimum between the calculated free space and current
                         // inactive anonymous pages
