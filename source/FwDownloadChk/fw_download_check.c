@@ -259,8 +259,8 @@ int can_proceed_fw_download(void)
                         // Consider the KBytes available in the ZRAM swap partition to be the minimum between the calculated free space and current
                         // inactive anonymous pages
                         uint64_t zram_swap_kbytes_available = entry.size - entry.used;
-                        if (inactive_anon_kb < zram_swap_kbytes_available) {
-                            zram_swap_kbytes_available = inactive_anon_kb;
+                        if ((fw_kb + inactive_anon_kb) < zram_swap_kbytes_available) {
+                            zram_swap_kbytes_available = fw_kb + inactive_anon_kb;
                         }
 
                         // Deduct from the KBytes available in ZRAM partition based on the calculated compression ratio
