@@ -127,7 +127,7 @@ int can_proceed_fw_download(void)
         char type[64];
         uint64_t size;
         uint64_t used;
-        int8_t priority;
+        int64_t priority;
     };
 
     if(syscfg_get(NULL,"xconf_url",url, sizeof(url)) != 0){
@@ -207,7 +207,7 @@ int can_proceed_fw_download(void)
                 snprintf(fmt, sizeof(fmt), "%%%zus %%%zus %%%s %%%s %%%s",
                          sizeof(entry.filename) - 1,
                          sizeof(entry.type) - 1,
-                         SCNu64, SCNu64, SCNd8);
+                         SCNu64, SCNu64, SCNd64);
                 int num_fields_scanned = sscanf(line, fmt,
                                             entry.filename,
                                             entry.type,
@@ -218,13 +218,13 @@ int can_proceed_fw_download(void)
                     continue;
                 }
 
-                if (strncmp(entry.type, "file", sizeof("file")) != 0) {
+                if (strncmp(entry.type, "file", sizeof("file")) == 0) {
                     // Add the additional bytes available in swap to available KB
                     uint64_t swap_kbytes_available = entry.size - entry.used;
                     XCONF_LOG_INFO("[FWCHK] Swap file found %s, adding %" PRIu64 " kB to available memory\n", entry.filename, swap_kbytes_available);
                     avail_kb += swap_kbytes_available;
-                } else if (strncmp(entry.type, "partition", sizeof("partition")) != 0) {
-                    if (strstr(entry.filename, "zram")) {
+                } else if (strncmp(entry.type, "partition", sizeof("partition")) == 0) {
+                    if (strstr(entry.filename, "zram") != 0) {
                         // Acquire the ZRAM block device name from the file name (e.g. /dev/zram0 -> zram0)
                         char *zram_block_device = strrchr(entry.filename, '/');
                         if (zram_block_device == NULL) {
@@ -238,7 +238,6 @@ int can_proceed_fw_download(void)
                         snprintf(mm_stat_file_path, sizeof(mm_stat_file_path), "/sys/block/%s/mm_stat", zram_block_device);
 
                         uint64_t orig_data_size = 0;
-                        uint64_t compr_data_size = 0;
                         uint64_t mem_used_total = 0;
                         FILE *mm_stat = fopen(mm_stat_file_path, "r");
                         if (mm_stat == NULL) {
@@ -246,11 +245,10 @@ int can_proceed_fw_download(void)
                             continue;
                         }
 
-                        num_fields_scanned = fscanf(mm_stat, "%" SCNu64 " %" SCNu64 " %" SCNu64,
+                        num_fields_scanned = fscanf(mm_stat, "%" SCNu64 " %*" SCNu64 " %" SCNu64,
                                &orig_data_size,
-                               &compr_data_size,
                                &mem_used_total);
-                        if (num_fields_scanned != 3) {
+                        if (num_fields_scanned != 2) {
                             fclose(mm_stat);
                             continue;
                         }
