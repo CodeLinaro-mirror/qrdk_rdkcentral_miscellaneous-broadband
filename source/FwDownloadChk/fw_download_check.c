@@ -218,12 +218,12 @@ int can_proceed_fw_download(void)
                     continue;
                 }
 
-                if (strstr(entry.type, "file") != 0) {
+                if (strncmp(entry.type, "file", sizeof("file")) != 0) {
                     // Add the additional bytes available in swap to available KB
                     uint64_t swap_kbytes_available = entry.size - entry.used;
                     XCONF_LOG_INFO("[FWCHK] Swap file found %s, adding %" PRIu64 " kB to available memory\n", entry.filename, swap_kbytes_available);
                     avail_kb += swap_kbytes_available;
-                } else if (strstr(entry.type, "partition") != 0) {
+                } else if (strncmp(entry.type, "partition", sizeof("partition")) != 0) {
                     if (strstr(entry.filename, "zram")) {
                         // Acquire the ZRAM block device name from the file name (e.g. /dev/zram0 -> zram0)
                         char *zram_block_device = strrchr(entry.filename, '/');
