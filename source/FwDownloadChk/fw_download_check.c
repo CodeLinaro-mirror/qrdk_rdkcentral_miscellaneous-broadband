@@ -238,6 +238,7 @@ int can_proceed_fw_download(void)
                         snprintf(mm_stat_file_path, sizeof(mm_stat_file_path), "/sys/block/%s/mm_stat", zram_block_device);
 
                         uint64_t orig_data_size = 0;
+                        uint64_t compr_data_size = 0;
                         uint64_t mem_used_total = 0;
                         FILE *mm_stat = fopen(mm_stat_file_path, "r");
                         if (mm_stat == NULL) {
@@ -245,10 +246,11 @@ int can_proceed_fw_download(void)
                             continue;
                         }
 
-                        num_fields_scanned = fscanf(mm_stat, "%" SCNu64 " %*" SCNu64 " %" SCNu64,
+                        num_fields_scanned = fscanf(mm_stat, "%" SCNu64 " %" SCNu64 " %" SCNu64,
                                &orig_data_size,
+                               &compr_data_size,
                                &mem_used_total);
-                        if (num_fields_scanned != 2) {
+                        if (num_fields_scanned != 3) {
                             fclose(mm_stat);
                             continue;
                         }
