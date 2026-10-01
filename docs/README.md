@@ -71,6 +71,7 @@ graph LR
   - CLI: `bridge_util <operation> <instance_number>`
   - Operations: `multinet-up`, `multinet-down`, `multinet-start`, `multinet-stop`, `multinet-restart`, `multinet-syncMembers`, `add-port`, `del-port`, `lnf-setup`, `lnf-down`, `meshbhaul-setup`, `meshonboard-setup`, `meshethbhaul-up`, `meshethbhaul-down`
   - Example: `bridge_util multinet-start 1`
+  - `CreateBrInterface` publishes the created multinet instance number to the `multinet-instances` sysevent.
 
 - **Service Control (ServiceCtrl)**: RBus-based daemon implementing service restart management through data element `Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.ServiceCtrl.ServiceRestartList` with queue-based request processing using pthread mutexes and condition variables for thread synchronization, automatically daemonizes via fork()/setsid() pattern, spawns dedicated worker thread (`spawn_svc_restart_queue_loop()`) for sequential service restart execution preventing race conditions, maintains restart queue using custom queue_t data structure with queue_push/queue_pop operations protected by pthread_mutex_lock
   - No direct CLI - accessed via RBus set operation on ServiceRestartList parameter

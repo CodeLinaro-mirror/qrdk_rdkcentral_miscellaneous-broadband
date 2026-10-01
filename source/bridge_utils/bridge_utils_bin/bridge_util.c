@@ -39,6 +39,7 @@
 #define WFO_ENABLED        "/etc/WFO_enabled"
 #define DEFAULT_NETMASK_ADDR "255.255.255.0"
 #define BRCTL_INTERACT_ENABLE_FILE "/var/tmp/brctl_interact_enable.txt"
+#define MAX_MULTINET_INSTANCES 64
 #define isValidSubnetByte(byte) (((byte == 255) || (byte == 254) || (byte == 252) || \
                                   (byte == 248) || (byte == 240) || (byte == 224) || \
                                   (byte == 192) || (byte == 128)) ? 1 : 0)
@@ -1906,6 +1907,10 @@ OVSACTION:
 int CreateBrInterface()
 {
 	char event_name[64] = {0};
+	char instanceList[256] = {0};
+	char instanceValue[16] = {0};
+	char instanceSearchList[272] = {0};
+	char instanceSearchValue[18] = {0};
 	snprintf(event_name,sizeof(event_name),"multinet_%d-status",InstanceNumber);
 	sysevent_set(syseventfd_vlan, sysevent_token_vlan, event_name, "partial", 0);
 	char val[16] = {0} ;
@@ -1992,6 +1997,23 @@ int CreateBrInterface()
     	snprintf(event_name,sizeof(event_name),"multinet_%d-status",InstanceNumber);
 	sysevent_set(syseventfd_vlan, sysevent_token_vlan, event_name, "ready", 0);
 
+		if (sysevent_get(syseventfd_vlan, sysevent_token_vlan, "multinet-instances", instanceList, sizeof(instanceList)) != 0)
+		{
+			instanceList[0] = '\0';
+		}
+		snprintf(instanceValue, sizeof(instanceValue), "%d", InstanceNumber);
+		snprintf(instanceSearchList, sizeof(instanceSearchList), " %s ", instanceList);
+		snprintf(instanceSearchValue, sizeof(instanceSearchValue), " %s ", instanceValue);
+		if (strstr(instanceSearchList, instanceSearchValue) == NULL)
+		{
+			if (instanceList[0] != '\0')
+			{
+				strncat(instanceList, " ", sizeof(instanceList) - strlen(instanceList) - 1);
+			}
+			strncat(instanceList, instanceValue, sizeof(instanceList) - strlen(instanceList) - 1);
+			sysevent_set(syseventfd_vlan, sysevent_token_vlan, "multinet-instances", instanceList, 0);
+		}
+
 	sysevent_set(syseventfd_vlan, sysevent_token_vlan, "firewall-restart", NULL, 0);
 
 	return 0;
@@ -2071,11 +2093,33 @@ int DeleteBrInterface()
     	snprintf(event_name,sizeof(event_name),"multinet_%d-status",InstanceNumber);
 	sysevent_set(syseventfd_vlan, sysevent_token_vlan, event_name, "stopped", 0);
 
+	char instanceList[256] = {0};
+	char instanceValue[16] = {0};
+	char filteredList[256] = {0};
+	char *token = NULL;
+	char *saveptr = NULL;
+
+	if (sysevent_get(syseventfd_vlan, sysevent_token_vlan, "multinet-instances", instanceList, sizeof(instanceList)) == 0)
+	{
+		snprintf(instanceValue, sizeof(instanceValue), "%d", InstanceNumber);
+		for (token = strtok_r(instanceList, " ", &saveptr); token != NULL; token = strtok_r(NULL, " ", &saveptr))
+		{
+			if (strcmp(token, instanceValue) != 0)
+			{
+				if (filteredList[0] != '\0')
+				{
+					strncat(filteredList, " ", sizeof(filteredList) - strlen(filteredList) - 1);
+				}
+				strncat(filteredList, token, sizeof(filteredList) - strlen(filteredList) - 1);
+			}
+		}
+		sysevent_set(syseventfd_vlan, sysevent_token_vlan, "multinet-instances", filteredList, 0);
+	}
+
 	sysevent_set(syseventfd_vlan, sysevent_token_vlan, "firewall-restart", NULL, 0);
 
 	return 0;
 }
-
 
 /*********************************************************************************************
 
