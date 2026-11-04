@@ -1301,6 +1301,13 @@ void assignIpToBridge(char* bridgeName, char* l3netName)
     char ipaddr[64] = {0} ;
     char subNetMask[64] = {0};
     int L3NetIdx = 0;
+
+    if (checkIfExists(bridgeName) == INTERFACE_NOT_EXIST)
+    {
+        bridge_util_log("%s : bridge [%s] not present, skipping IP assignment\n", __FUNCTION__, bridgeName);
+        return;
+    }
+
     snprintf(paramName,sizeof(paramName), l3netName);
     retPsmGet = PSM_Get_Record_Value2(bus_handle,g_Subsystem, paramName, NULL, &paramValue);
     if (retPsmGet == CCSP_SUCCESS)
